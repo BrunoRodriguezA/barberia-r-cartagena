@@ -29,7 +29,9 @@
       title.textContent = barber.nombre;
 
       const desc = document.createElement("p");
+      desc.className = "barber-description";
       desc.textContent = "Barbero de Barbería R.";
+      desc.hidden = true;
 
       const button = document.createElement("button");
       button.className = "choose";
