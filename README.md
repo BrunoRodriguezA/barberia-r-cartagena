@@ -4,9 +4,7 @@ Web estatica para Barberia R en Cartagena.
 
 ## Archivos principales
 
-- `index.html`: version lista para desplegar.
-- `src_index.html`: copia fuente equivalente.
-- `src_barberia_r_reservas_corregida.html`: copia fuente equivalente.
+- `index.html`: fichero unico principal de la web, listo para desplegar.
 
 La web usa HTML, CSS embebido, JavaScript vanilla y Supabase JS por CDN.
 
