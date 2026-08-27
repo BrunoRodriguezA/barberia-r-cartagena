@@ -51,6 +51,25 @@ section{padding:90px 5%;max-width:1200px;margin:auto}
 .booking label{display:block;font-weight:700;margin-bottom:7px}
 .booking input,.booking select{width:100%;padding:14px;border-radius:9px;border:1px solid #444;background:#070707;color:#fff;outline:none}
 .booking input:focus,.booking select:focus{border-color:var(--gold)}
+.date-field{position:relative}
+.date-row{display:grid;grid-template-columns:1fr 52px;gap:8px}
+.calendar-toggle,.calendar-nav,.calendar-day{border:1px solid #444;background:#070707;color:#fff;cursor:pointer}
+.calendar-toggle{border-radius:9px;font-size:20px;font-weight:900}
+.calendar-toggle:focus,.calendar-nav:focus,.calendar-day:focus{outline:2px solid var(--gold);outline-offset:2px}
+.calendar-popover{position:absolute;top:calc(100% + 8px);left:0;right:0;z-index:40;max-width:360px;background:#0d0d0d;border:1px solid #3a2f16;border-radius:10px;padding:12px;box-shadow:0 20px 55px rgba(0,0,0,.45)}
+.calendar-popover[hidden]{display:none}
+.calendar-head{display:grid;grid-template-columns:42px 1fr 42px;align-items:center;gap:8px;margin-bottom:10px}
+.calendar-month{text-align:center;color:var(--gold);font-weight:900;text-transform:capitalize}
+.calendar-nav{height:42px;border-radius:8px;font-size:20px;font-weight:900}
+.calendar-nav:disabled{opacity:.28;cursor:not-allowed}
+.calendar-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.calendar-weekday{height:26px;display:grid;place-items:center;color:#aaa;font-size:12px;font-weight:800}
+.calendar-day{height:42px;border-radius:8px;font-weight:800}
+.calendar-day:hover:not(:disabled){border-color:var(--gold);color:var(--gold)}
+.calendar-day.today{border-color:#777}
+.calendar-day.selected{background:var(--gold);border-color:var(--gold);color:#080808}
+.calendar-day:disabled{opacity:.28;cursor:not-allowed}
+.calendar-day.empty{visibility:hidden}
 .full{grid-column:1/-1}
 .slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:9px;margin-top:10px}
 .slot{padding:11px 6px;border-radius:8px;border:1px solid #444;background:#090909;color:#fff;cursor:pointer}
@@ -70,6 +89,7 @@ footer{text-align:center;padding:35px 20px;border-top:1px solid #222;color:#777}
  .hero p{margin-left:auto;margin-right:auto}.hero-logo-wrap{order:-1}.hero-logo{width:250px}
  .barbers{grid-template-columns:1fr}.booking-grid,.contact{grid-template-columns:1fr}.full{grid-column:auto}
  .nav-links{display:none}.menu{display:block}.nav-links.open{display:flex;position:absolute;top:72px;left:0;right:0;background:#080808;flex-direction:column;padding:20px;border-bottom:1px solid #333}
+ .calendar-popover{position:fixed;left:12px;right:12px;top:auto;bottom:76px;max-width:none}
 }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -158,9 +178,21 @@ footer{text-align:center;padding:35px 20px;border-top:1px solid #222;color:#777}
             <option>Wally</option><option>Robinson</option><option>Miguel</option>
           </select>
         </div>
-        <div>
+        <div class="date-field">
           <label for="date">Día</label>
-          <input id="date" type="date" required>
+          <div class="date-row">
+            <input id="date" type="date" required>
+            <button class="calendar-toggle" id="calendarToggle" type="button" aria-label="Abrir calendario" aria-expanded="false">▦</button>
+          </div>
+          <div class="calendar-popover" id="calendarPopover" hidden>
+            <div class="calendar-head">
+              <button class="calendar-nav" id="prevMonth" type="button" aria-label="Mes anterior">&lt;</button>
+              <div class="calendar-month" id="calendarMonth"></div>
+              <button class="calendar-nav" id="nextMonth" type="button" aria-label="Mes siguiente">&gt;</button>
+            </div>
+            <div class="calendar-grid" id="calendarWeekdays"></div>
+            <div class="calendar-grid" id="calendarDays"></div>
+          </div>
         </div>
         <div>
           <label>Hora disponible</label>
@@ -278,7 +310,88 @@ async function loadBarbers(){
 const slotsByDay = ["10:00","10:30","11:00","11:30","12:00","12:30","13:00","13:30","17:00","17:30","18:00","18:30","19:00","19:30","20:00"];
 const $ = id => document.getElementById(id);
 const today = new Date();
-$("date").min = today.toISOString().slice(0,10);
+const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+let calendarView = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
+
+function formatDateValue(date){
+  const year = date.getFullYear();
+  const month = String(date.getMonth()+1).padStart(2,"0");
+  const day = String(date.getDate()).padStart(2,"0");
+  return `${year}-${month}-${day}`;
+}
+
+$("date").min = formatDateValue(todayStart);
+
+function closeCalendar(){
+  $("calendarPopover").hidden = true;
+  $("calendarToggle").setAttribute("aria-expanded","false");
+}
+
+function openCalendar(){
+  syncCalendarToDate();
+  $("calendarPopover").hidden = false;
+  $("calendarToggle").setAttribute("aria-expanded","true");
+  renderCalendar();
+}
+
+function syncCalendarToDate(){
+  if(!$("date").value)return;
+  const parts = $("date").value.split("-").map(Number);
+  if(parts.length === 3 && parts.every(Boolean)){
+    calendarView = new Date(parts[0], parts[1]-1, 1);
+  }
+}
+
+function renderCalendar(){
+  const monthNames = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  const weekdayNames = ["L","M","X","J","V","S","D"];
+  const year = calendarView.getFullYear();
+  const month = calendarView.getMonth();
+  const selected = $("date").value;
+  const currentMonthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
+
+  $("calendarMonth").textContent = `${monthNames[month]} ${year}`;
+  $("prevMonth").disabled = calendarView <= currentMonthStart;
+  $("calendarWeekdays").innerHTML = "";
+  weekdayNames.forEach(day=>{
+    const item = document.createElement("div");
+    item.className = "calendar-weekday";
+    item.textContent = day;
+    $("calendarWeekdays").appendChild(item);
+  });
+
+  $("calendarDays").innerHTML = "";
+  const firstDay = new Date(year, month, 1);
+  const leadingDays = (firstDay.getDay()+6)%7;
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+
+  for(let i=0;i<leadingDays;i++){
+    const empty = document.createElement("button");
+    empty.type = "button";
+    empty.className = "calendar-day empty";
+    empty.tabIndex = -1;
+    $("calendarDays").appendChild(empty);
+  }
+
+  for(let day=1;day<=daysInMonth;day++){
+    const date = new Date(year, month, day);
+    const value = formatDateValue(date);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "calendar-day";
+    button.textContent = day;
+    button.disabled = date < todayStart;
+    if(value === formatDateValue(todayStart))button.classList.add("today");
+    if(value === selected)button.classList.add("selected");
+    button.addEventListener("click",()=>{
+      $("date").value = value;
+      closeCalendar();
+      renderCalendar();
+      renderSlots();
+    });
+    $("calendarDays").appendChild(button);
+  }
+}
 
 function showMessage(text,ok=false){
   $("bookingMessage").hidden=false;
@@ -327,7 +440,32 @@ async function renderSlots(){
 }
 
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
-$("date").addEventListener("change",renderSlots);
+$("calendarToggle").addEventListener("click",event=>{
+  event.stopPropagation();
+  if($("calendarPopover").hidden)openCalendar();
+  else closeCalendar();
+});
+$("prevMonth").addEventListener("click",()=>{
+  calendarView = new Date(calendarView.getFullYear(), calendarView.getMonth()-1, 1);
+  renderCalendar();
+});
+$("nextMonth").addEventListener("click",()=>{
+  calendarView = new Date(calendarView.getFullYear(), calendarView.getMonth()+1, 1);
+  renderCalendar();
+});
+$("date").addEventListener("change",()=>{
+  syncCalendarToDate();
+  renderCalendar();
+  renderSlots();
+});
+document.addEventListener("click",event=>{
+  const clickedCalendar = $("calendarPopover").contains(event.target);
+  const clickedToggle = $("calendarToggle").contains(event.target);
+  if(!clickedCalendar && !clickedToggle)closeCalendar();
+});
+document.addEventListener("keydown",event=>{
+  if(event.key === "Escape")closeCalendar();
+});
 $("barber").addEventListener("change",renderSlots);
 
 $("bookingForm").addEventListener("submit",async e=>{
